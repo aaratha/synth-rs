@@ -32,6 +32,7 @@ struct Rectangle {
     w: f32,
     h: f32,
     dragging: bool,
+    rotation: f32,
 }
 
 fn model(app: &App) -> Model {
@@ -93,6 +94,7 @@ fn model(app: &App) -> Model {
                 w: 100.0,
                 h: 100.0,
                 dragging: false,
+                rotation: 0.0,
             },
             Rectangle {
                 x: 100.0,
@@ -102,6 +104,7 @@ fn model(app: &App) -> Model {
                 w: 100.0,
                 h: 100.0,
                 dragging: false,
+                rotation: 0.0,
             },
         ],
         is_updating: false,
@@ -184,6 +187,7 @@ fn view(app: &App, model: &Model, frame: Frame) {
         draw.rect()
             .x_y(rect.x, rect.y)
             .w_h(rect.w, rect.h)
+            .rotate(rect.rotation)
             .color(BLUE);
     }
 
@@ -252,7 +256,8 @@ fn handle_drag(app: &App, model: &mut Model) {
 
 fn update(app: &App, model: &mut Model, _update: Update) {
     handle_drag(app, model);
-    update_cards(app, model)
+    update_cards(app, model);
+    animations(app, model);
 }
 
 // Function to snap coordinates to the nearest grid slot
@@ -278,7 +283,7 @@ fn distance(x1: f32, y1: f32, x2: f32, y2: f32) -> f32 {
 
 fn animations(_app: &App, model: &mut Model) {
     for rect in model.rects.iter_mut() {
-        rect.x += 1.0;
+        rect.rotation += 0.01;
     }
 }
 
