@@ -33,6 +33,7 @@ struct Rectangle {
     h: f32,
     dragging: bool,
     rotation: f32,
+    scale: f32,
 }
 
 fn model(app: &App) -> Model {
@@ -95,6 +96,7 @@ fn model(app: &App) -> Model {
                 h: 100.0,
                 dragging: false,
                 rotation: 0.0,
+                scale: 1.0,
             },
             Rectangle {
                 x: 100.0,
@@ -105,6 +107,7 @@ fn model(app: &App) -> Model {
                 h: 100.0,
                 dragging: false,
                 rotation: 0.0,
+                scale: 1.0,
             },
         ],
         is_updating: false,
@@ -186,7 +189,7 @@ fn view(app: &App, model: &Model, frame: Frame) {
     for rect in model.rects.iter() {
         draw.rect()
             .x_y(rect.x, rect.y)
-            .w_h(rect.w, rect.h)
+            .w_h(rect.w * rect.scale, rect.h * rect.scale)
             .rotate(rect.rotation)
             .color(BLUE);
     }
@@ -281,9 +284,11 @@ fn distance(x1: f32, y1: f32, x2: f32, y2: f32) -> f32 {
     ((x2 - x1).powi(2) + (y2 - y1).powi(2)).sqrt()
 }
 
-fn animations(_app: &App, model: &mut Model) {
+fn animations(app: &App, model: &mut Model) {
+    let t = app.time;
     for rect in model.rects.iter_mut() {
         rect.rotation += 0.01;
+        rect.scale = 1.0 + 0.2 * t.sin()
     }
 }
 
