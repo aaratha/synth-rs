@@ -4,11 +4,13 @@ use nannou_audio::Buffer;
 use std::f64::consts::PI;
 
 fn main() {
-    nannou::app(model).run();
+    nannou::app(model).update(update).run();
 }
 
 struct Model {
     stream: audio::Stream<Audio>,
+    is_mouse_pressed: bool,
+    rect: Rectangle,
 }
 
 struct Audio {
@@ -16,10 +18,19 @@ struct Audio {
     hz: f64,
 }
 
+struct Rectangle {
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+}
+
 fn model(app: &App) -> Model {
     // Create a window to receive key pressed events.
     app.new_window()
         .key_pressed(key_pressed)
+        .mouse_pressed(mouse_pressed)
+        .mouse_released(mouse_released)
         .view(view)
         .build()
         .unwrap();
@@ -41,7 +52,16 @@ fn model(app: &App) -> Model {
 
     stream.play().unwrap();
 
-    Model { stream }
+    Model {
+        stream,
+        is_mouse_pressed: false,
+        rect: Rectangle {
+            x: 0.0,
+            y: 0.0,
+            w: 100.0,
+            h: 100.0,
+        },
+    }
 }
 
 // A function that renders the given `Audio` to the given `Buffer`.
@@ -92,6 +112,8 @@ fn key_pressed(_app: &App, model: &mut Model, key: Key) {
 }
 
 fn view(app: &App, model: &Model, frame: Frame) {
+    let mut rect = &model.rect;
+
     let draw = app.draw();
 
     draw.background().color(DARKSLATEGRAY);
@@ -100,10 +122,11 @@ fn view(app: &App, model: &Model, frame: Frame) {
 
     // Draw an ellipse to follow the mouse.
     let t = app.time;
-    draw.ellipse()
-        .x_y(app.mouse.x, app.mouse.y)
-        .radius(50.0)
-        .color(RED);
+
+    draw.rect()
+        .x_y(rect.x, rect.y)
+        .w_h(rect.w, rect.h)
+        .color(BLUE);
 
     // Draw a line!
     draw.line()
@@ -112,18 +135,32 @@ fn view(app: &App, model: &Model, frame: Frame) {
         .color(PALEGOLDENROD)
         .points(win.top_left() * t.sin(), win.bottom_right() * t.cos());
 
-    for r in win.subdivisions_iter() {
-        for r in r.subdivisions_iter() {
-            for r in r.subdivisions_iter() {
-                let side = r.w().min(r.h());
-                let start = r.xy();
-                let start_to_mouse = app.mouse.position() - start;
-                let target_mag = start_to_mouse.length().min(side * 0.5);
-                let end = start + start_to_mouse.normalize_or_zero() * target_mag;
-                draw.arrow().weight(5.0).points(start, end);
-            }
-        }
-    }
-
     draw.to_frame(app, &frame).unwrap();
+}
+
+fn mouse_pressed(app: &App, model: &mut Model, _button: MouseButton) {
+    let x = app.mouse.x;
+    let y = app.mouse.y;
+    println!("Mouse pressed at x: {}, y: {}", x, y);
+    model.is_mouse_pressed = true;
+}
+
+fn mouse_released(_app: &App, model: &mut Model, _button: MouseButton) {
+    model.is_mouse_pressed = false;
+}
+
+fn handle_drag(app: &App, model: &mut Model) {
+    let x = app.mouse.x;
+    let y = app.mouse.y;
+    if model.is_mouse_pressed {
+        model.rect.x = x;
+        model.rect.y = y;
+    } else {
+        model.rect.x = 0.0;
+        model.rect.y = 0.0;
+    }
+}
+
+fn update(_app: &App, model: &mut Model, _update: Update) {
+    handle_drag(_app, model);
 }
