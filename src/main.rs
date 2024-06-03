@@ -10,7 +10,7 @@ fn main() {
 struct Model {
     stream: audio::Stream<Audio>,
     is_mouse_pressed: bool,
-    rect: Rectangle,
+    rects: Vec<Rectangle>,
 }
 
 struct Audio {
@@ -20,9 +20,12 @@ struct Audio {
 
 struct Rectangle {
     x: f32,
+    x_last: f32,
     y: f32,
+    y_last: f32,
     w: f32,
     h: f32,
+    dragging: bool,
 }
 
 fn model(app: &App) -> Model {
@@ -55,12 +58,26 @@ fn model(app: &App) -> Model {
     Model {
         stream,
         is_mouse_pressed: false,
-        rect: Rectangle {
-            x: 0.0,
-            y: 0.0,
-            w: 100.0,
-            h: 100.0,
-        },
+        rects: vec![
+            Rectangle {
+                x: 0.0,
+                x_last: 0.0,
+                y: 0.0,
+                y_last: 0.0,
+                w: 100.0,
+                h: 100.0,
+                dragging: false,
+            },
+            Rectangle {
+                x: 100.0,
+                x_last: 100.0,
+                y: 100.0,
+                y_last: 100.0,
+                w: 100.0,
+                h: 100.0,
+                dragging: false,
+            },
+        ],
     }
 }
 
@@ -112,21 +129,20 @@ fn key_pressed(_app: &App, model: &mut Model, key: Key) {
 }
 
 fn view(app: &App, model: &Model, frame: Frame) {
-    let mut rect = &model.rect;
-
     let draw = app.draw();
 
     draw.background().color(DARKSLATEGRAY);
 
     let win = app.window_rect();
 
-    // Draw an ellipse to follow the mouse.
     let t = app.time;
 
-    draw.rect()
-        .x_y(rect.x, rect.y)
-        .w_h(rect.w, rect.h)
-        .color(BLUE);
+    for rect in model.rects.iter() {
+        draw.rect()
+            .x_y(rect.x, rect.y)
+            .w_h(rect.w, rect.h)
+            .color(BLUE);
+    }
 
     // Draw a line!
     draw.line()
@@ -142,30 +158,38 @@ fn mouse_pressed(app: &App, model: &mut Model, _button: MouseButton) {
     let x = app.mouse.x;
     let y = app.mouse.y;
     println!("Mouse pressed at x: {}, y: {}", x, y);
-    if x >= model.rect.x - model.rect.w / 2.0
-        && x <= model.rect.x + model.rect.w / 2.0
-        && y >= model.rect.y - model.rect.h / 2.0
-        && y <= model.rect.y + model.rect.h / 2.0
-    {
-        model.is_mouse_pressed = true;
+    model.is_mouse_pressed = true;
+    for rect in model.rects.iter_mut() {
+        if x >= rect.x - rect.w / 2.0
+            && x <= rect.x + rect.w / 2.0
+            && y >= rect.y - rect.h / 2.0
+            && y <= rect.y + rect.h / 2.0
+        {
+            rect.dragging = true;
+        }
     }
 }
 
 fn mouse_released(_app: &App, model: &mut Model, _button: MouseButton) {
     model.is_mouse_pressed = false;
+    for rect in model.rects.iter_mut() {
+        rect.dragging = false;
+    }
 }
 
 fn handle_drag(app: &App, model: &mut Model) {
     let x = app.mouse.x;
     let y = app.mouse.y;
-    let x_last = model.rect.x;
-    let y_last = model.rect.y;
-    if model.is_mouse_pressed {
-        model.rect.x = x;
-        model.rect.y = y;
-    } else {
-        model.rect.x = x_last;
-        model.rect.y = y_last;
+    for rect in model.rects.iter_mut() {
+        rect.x_last = rect.x;
+        rect.y_last = rect.y;
+        if model.is_mouse_pressed && rect.dragging {
+            rect.x = x;
+            rect.y = y;
+        } else {
+            rect.x = rect.x_last;
+            rect.y = rect.y_last;
+        }
     }
 }
 
