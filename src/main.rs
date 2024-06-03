@@ -142,7 +142,13 @@ fn mouse_pressed(app: &App, model: &mut Model, _button: MouseButton) {
     let x = app.mouse.x;
     let y = app.mouse.y;
     println!("Mouse pressed at x: {}, y: {}", x, y);
-    model.is_mouse_pressed = true;
+    if x >= model.rect.x - model.rect.w / 2.0
+        && x <= model.rect.x + model.rect.w / 2.0
+        && y >= model.rect.y - model.rect.h / 2.0
+        && y <= model.rect.y + model.rect.h / 2.0
+    {
+        model.is_mouse_pressed = true;
+    }
 }
 
 fn mouse_released(_app: &App, model: &mut Model, _button: MouseButton) {
@@ -152,12 +158,14 @@ fn mouse_released(_app: &App, model: &mut Model, _button: MouseButton) {
 fn handle_drag(app: &App, model: &mut Model) {
     let x = app.mouse.x;
     let y = app.mouse.y;
+    let x_last = model.rect.x;
+    let y_last = model.rect.y;
     if model.is_mouse_pressed {
         model.rect.x = x;
         model.rect.y = y;
     } else {
-        model.rect.x = 0.0;
-        model.rect.y = 0.0;
+        model.rect.x = x_last;
+        model.rect.y = y_last;
     }
 }
 
