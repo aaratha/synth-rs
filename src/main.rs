@@ -92,23 +92,17 @@ fn key_pressed(_app: &App, model: &mut Model, key: Key) {
 }
 
 fn view(app: &App, model: &Model, frame: Frame) {
-    // Begin drawing
     let draw = app.draw();
 
-    // Clear the background to blue.
-    draw.background().color(CORNFLOWERBLUE);
+    draw.background().color(DARKSLATEGRAY);
 
-    // Draw a purple triangle in the top left half of the window.
     let win = app.window_rect();
-    draw.tri()
-        .points(win.bottom_left(), win.top_left(), win.top_right())
-        .color(VIOLET);
 
     // Draw an ellipse to follow the mouse.
     let t = app.time;
     draw.ellipse()
-        .x_y(app.mouse.x * t.cos(), app.mouse.y)
-        .radius(win.w() * 0.125 * t.sin())
+        .x_y(app.mouse.x, app.mouse.y)
+        .radius(50.0)
         .color(RED);
 
     // Draw a line!
@@ -118,18 +112,18 @@ fn view(app: &App, model: &Model, frame: Frame) {
         .color(PALEGOLDENROD)
         .points(win.top_left() * t.sin(), win.bottom_right() * t.cos());
 
-    // Draw a quad that follows the inverse of the ellipse.
-    draw.quad()
-        .x_y(-app.mouse.x, app.mouse.y)
-        .color(DARKGREEN)
-        .rotate(t);
+    for r in win.subdivisions_iter() {
+        for r in r.subdivisions_iter() {
+            for r in r.subdivisions_iter() {
+                let side = r.w().min(r.h());
+                let start = r.xy();
+                let start_to_mouse = app.mouse.position() - start;
+                let target_mag = start_to_mouse.length().min(side * 0.5);
+                let end = start + start_to_mouse.normalize_or_zero() * target_mag;
+                draw.arrow().weight(5.0).points(start, end);
+            }
+        }
+    }
 
-    // Draw a rect that follows a different inverse of the ellipse.
-    draw.rect()
-        .x_y(app.mouse.y, app.mouse.x)
-        .w(app.mouse.x * 0.25)
-        .hsv(t, 1.0, 1.0);
-
-    // Write the result of our drawing to the window's frame.
     draw.to_frame(app, &frame).unwrap();
 }
