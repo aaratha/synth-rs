@@ -11,6 +11,11 @@ struct Model {
     stream: audio::Stream<Audio>,
     is_mouse_pressed: bool,
     rects: Vec<Rectangle>,
+    is_updating: bool,
+    grid_slots: Vec<Point2>,
+    selected_card: Option<usize>, // Index of the selected rectangle
+    hand: Vec<Rectangle>,
+    chain: Vec<Rectangle>,
 }
 
 struct Audio {
@@ -18,6 +23,7 @@ struct Audio {
     hz: f64,
 }
 
+#[derive(Clone, Debug)]
 struct Rectangle {
     x: f32,
     x_last: f32,
@@ -42,18 +48,38 @@ fn model(app: &App) -> Model {
     let audio_host = audio::Host::new();
 
     // Initialise the state that we want to live on the audio thread.
-    let model = Audio {
+    let audio_model = Audio {
         phase: 0.0,
         hz: 440.0,
     };
 
     let stream = audio_host
-        .new_output_stream(model)
+        .new_output_stream(audio_model)
         .render(audio)
         .build()
         .unwrap();
 
     stream.play().unwrap();
+
+    // Define the grid slots
+    let mut grid_slots = vec![];
+    let grid_size = 100.0;
+    let num_slots = 5;
+    let win = app.window_rect();
+
+    // Bottom row
+    let bottom_y = win.bottom() + grid_size;
+    for i in 0..num_slots {
+        let x = win.left() + grid_size + i as f32 * grid_size;
+        grid_slots.push(pt2(x, bottom_y));
+    }
+
+    // Middle row
+    let middle_y = win.bottom() + win.h() / 2.0;
+    for i in 0..num_slots {
+        let x = win.left() + grid_size + i as f32 * grid_size;
+        grid_slots.push(pt2(x, middle_y));
+    }
 
     Model {
         stream,
@@ -78,6 +104,11 @@ fn model(app: &App) -> Model {
                 dragging: false,
             },
         ],
+        is_updating: false,
+        grid_slots,
+        selected_card: None,
+        hand: vec![],
+        chain: vec![],
     }
 }
 
@@ -89,7 +120,9 @@ fn audio(audio: &mut Audio, buffer: &mut Buffer) {
     for frame in buffer.frames_mut() {
         let sine_amp = (2.0 * PI * audio.phase).sin() as f32;
         audio.phase += audio.hz / sample_rate;
-        audio.phase %= sample_rate;
+        if audio.phase >= 1.0 {
+            audio.phase -= 1.0;
+        }
         for channel in frame {
             *channel = sine_amp * volume;
         }
@@ -137,6 +170,16 @@ fn view(app: &App, model: &Model, frame: Frame) {
 
     let t = app.time;
 
+    // Draw grid slots
+    for slot in &model.grid_slots {
+        draw.rect()
+            .x_y(slot.x, slot.y)
+            .w_h(50.0, 50.0)
+            .color(GREEN)
+            .stroke_weight(1.0)
+            .stroke(BLACK);
+    }
+
     for rect in model.rects.iter() {
         draw.rect()
             .x_y(rect.x, rect.y)
@@ -155,32 +198,46 @@ fn view(app: &App, model: &Model, frame: Frame) {
 }
 
 fn mouse_pressed(app: &App, model: &mut Model, _button: MouseButton) {
-    let x = app.mouse.x;
-    let y = app.mouse.y;
-    println!("Mouse pressed at x: {}, y: {}", x, y);
-    model.is_mouse_pressed = true;
-    for rect in model.rects.iter_mut() {
-        if x >= rect.x - rect.w / 2.0
-            && x <= rect.x + rect.w / 2.0
-            && y >= rect.y - rect.h / 2.0
-            && y <= rect.y + rect.h / 2.0
-        {
-            rect.dragging = true;
+    if model.selected_card.is_none() {
+        let x = app.mouse.x;
+        let y = app.mouse.y;
+        println!("Mouse pressed at x: {}, y: {}", x, y);
+        model.is_mouse_pressed = true;
+        for (i, rect) in model.rects.iter_mut().enumerate() {
+            if x >= rect.x - rect.w / 2.0
+                && x <= rect.x + rect.w / 2.0
+                && y >= rect.y - rect.h / 2.0
+                && y <= rect.y + rect.h / 2.0
+            {
+                rect.dragging = true;
+                model.selected_card = Some(i);
+                break;
+            }
         }
     }
 }
 
-fn mouse_released(_app: &App, model: &mut Model, _button: MouseButton) {
+fn mouse_released(app: &App, model: &mut Model, _button: MouseButton) {
     model.is_mouse_pressed = false;
-    for rect in model.rects.iter_mut() {
-        rect.dragging = false;
+    if let Some(selected) = model.selected_card {
+        let rect = &mut model.rects[selected];
+        if rect.dragging {
+            let (new_x, new_y) = snap_to_grid(rect.x, rect.y, &model.grid_slots);
+            rect.x = new_x;
+            rect.y = new_y;
+            rect.dragging = false;
+            model.is_updating = true;
+            println!("is_updating: {}", model.is_updating)
+        }
+        model.selected_card = None;
     }
 }
 
 fn handle_drag(app: &App, model: &mut Model) {
-    let x = app.mouse.x;
-    let y = app.mouse.y;
-    for rect in model.rects.iter_mut() {
+    if let Some(selected) = model.selected_card {
+        let rect = &mut model.rects[selected];
+        let x = app.mouse.x;
+        let y = app.mouse.y;
         rect.x_last = rect.x;
         rect.y_last = rect.y;
         if model.is_mouse_pressed && rect.dragging {
@@ -193,6 +250,53 @@ fn handle_drag(app: &App, model: &mut Model) {
     }
 }
 
-fn update(_app: &App, model: &mut Model, _update: Update) {
-    handle_drag(_app, model);
+fn update(app: &App, model: &mut Model, _update: Update) {
+    handle_drag(app, model);
+    update_cards(app, model)
+}
+
+// Function to snap coordinates to the nearest grid slot
+fn snap_to_grid(x: f32, y: f32, grid_slots: &Vec<Point2>) -> (f32, f32) {
+    let mut nearest_slot = grid_slots[0];
+    let mut min_distance = distance(x, y, nearest_slot.x, nearest_slot.y);
+
+    for &slot in grid_slots.iter() {
+        let dist = distance(x, y, slot.x, slot.y);
+        if dist < min_distance {
+            nearest_slot = slot;
+            min_distance = dist;
+        }
+    }
+
+    (nearest_slot.x, nearest_slot.y)
+}
+
+// Function to calculate the distance between two points
+fn distance(x1: f32, y1: f32, x2: f32, y2: f32) -> f32 {
+    ((x2 - x1).powi(2) + (y2 - y1).powi(2)).sqrt()
+}
+
+fn animations(_app: &App, model: &mut Model) {
+    for rect in model.rects.iter_mut() {
+        rect.x += 1.0;
+    }
+}
+
+fn update_cards(app: &App, model: &mut Model) {
+    let win = app.window_rect();
+    if model.is_updating {
+        model.hand.clear();
+        model.chain.clear();
+        for rect in model.rects.iter_mut() {
+            if rect.y >= win.bottom() + win.h() / 3.0 {
+                model.chain.push(rect.clone());
+                println!("Chain: {:?}", model.chain);
+            } else if rect.y <= win.bottom() + win.h() / 3.0 {
+                model.hand.push(rect.clone());
+                println!("Hand: {:?}", model.hand);
+            }
+        }
+        model.is_updating = false;
+        println!("is_updating: {}", model.is_updating)
+    }
 }
