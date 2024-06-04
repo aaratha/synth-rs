@@ -28,10 +28,10 @@ struct Audio {
     envelope: f32,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 struct Oscillator {}
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 struct Sequencer {
     sequence: Vec<f32>,
     step: usize,
@@ -45,10 +45,10 @@ impl Sequencer {
     }
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 struct Envelope {}
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 enum CardClass {
     Oscillator(Oscillator),
     Sequencer(Sequencer),
@@ -56,7 +56,7 @@ enum CardClass {
     // Add more variants here as needed
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 struct Card {
     x: f32,
     x_last: f32,
@@ -272,13 +272,24 @@ fn view(app: &App, model: &Model, frame: Frame) {
         }
     }
 
-    draw.line()
-        .weight(10.0 + (t.sin() * 0.5 + 0.5) * 90.0)
-        .caps_round()
-        .color(PALEGOLDENROD)
-        .points(win.top_left() * t.sin(), win.bottom_right() * t.cos());
-
     draw.to_frame(app, &frame).unwrap();
+}
+
+fn remove_card_from_collections(model: &mut Model, card_index: usize) {
+    if let Some(pos) = model
+        .hand
+        .iter()
+        .position(|c| c == &model.cards[card_index])
+    {
+        model.hand.remove(pos);
+    }
+    if let Some(pos) = model
+        .chain
+        .iter()
+        .position(|c| c == &model.cards[card_index])
+    {
+        model.chain.remove(pos);
+    }
 }
 
 fn mouse_pressed(app: &App, model: &mut Model, _button: MouseButton) {
@@ -296,6 +307,8 @@ fn mouse_pressed(app: &App, model: &mut Model, _button: MouseButton) {
                 card.dragging = true;
                 model.selected_card = Some(i);
                 card.start_time = app.time;
+                remove_card_from_collections(model, i);
+                model.is_updating = true;
                 break;
             }
         }
@@ -328,6 +341,7 @@ fn handle_drag(app: &App, model: &mut Model) {
         if model.is_mouse_pressed && card.dragging {
             card.x_targ = x;
             card.y_targ = y;
+            model.is_updating = true; // Mark as updating to refresh chain and hand
         } else {
             card.x_targ = card.x_last;
             card.y_targ = card.y_last;
@@ -348,10 +362,10 @@ fn update(app: &App, model: &mut Model, _update: Update) {
 
     model.last_update = now;
     handle_drag(app, model);
-    update_cards(app, model);
+    update_cards(app, model); // Update hand and chain during dragging
     animations(app, model);
     lerp(model);
-    update_sound(app, model)
+    update_sound(app, model); // Update sound every frame
 }
 
 fn snap_to_grid(x: f32, y: f32, grid_slots: &Vec<Point2>) -> (f32, f32) {
@@ -378,7 +392,7 @@ fn animations(app: &App, model: &mut Model) {
     let wobble_amplitude = 0.4;
     let wobble_speed = 1.0;
     let frequency = 20.0;
-    let lerp_rate = 0.4;
+    let lerp_rate = 0.9;
 
     for (i, card) in model.cards.iter_mut().enumerate() {
         let t = app.time - card.start_time;
@@ -409,14 +423,11 @@ fn update_cards(app: &App, model: &mut Model) {
         for card in model.cards.iter_mut() {
             if card.y >= win.bottom() + win.h() / 3.0 {
                 model.chain.push(card.clone());
-                println!("Chain: {:?}", model.chain);
             } else if card.y <= win.bottom() + win.h() / 3.0 {
                 model.hand.push(card.clone());
-                println!("Hand: {:?}", model.hand);
             }
         }
         model.is_updating = false;
-        println!("is_updating: {}", model.is_updating)
     }
 }
 
@@ -426,7 +437,6 @@ fn lerp(model: &mut Model) {
         card.y += (card.y_targ - card.y) * 0.3;
     }
 }
-
 fn update_sound(app: &App, model: &mut Model) {
     let hz_increment = 1.0 * (app.time as f64).sin();
 
@@ -449,20 +459,16 @@ fn update_sound(app: &App, model: &mut Model) {
         .position(|card| matches!(card.class, CardClass::Envelope(_)));
 
     if let Some(index) = oscillator_index {
-        if let Some(CardClass::Oscillator(_osc)) =
-            model.chain.get_mut(index).map(|card| &mut card.class)
-        {
-            model
-                .stream
-                .send(move |audio| {
-                    audio.playing = true;
-                })
-                .unwrap();
-        }
+        model
+            .stream
+            .send(|audio| {
+                audio.playing = true;
+            })
+            .unwrap();
     } else {
         model
             .stream
-            .send(move |audio| {
+            .send(|audio| {
                 audio.playing = false;
             })
             .unwrap();
