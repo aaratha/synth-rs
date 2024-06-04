@@ -17,11 +17,13 @@ struct Model {
     hand: Vec<Card>,
     chain: Vec<Card>,
     last_update: std::time::Instant,
+    stream_playing: bool,
 }
 
 struct Audio {
     phase: f64,
     hz: f64,
+    playing: bool,
 }
 
 #[derive(Clone, Debug)]
@@ -90,6 +92,7 @@ fn model(app: &App) -> Model {
     let audio_model = Audio {
         phase: 0.0,
         hz: 440.0,
+        playing: false,
     };
 
     let stream = audio_host
@@ -168,6 +171,7 @@ fn model(app: &App) -> Model {
         hand: vec![],
         chain: vec![],
         last_update: std::time::Instant::now(),
+        stream_playing: true, // Initialize to true as the stream is initially playing
     }
 }
 
@@ -175,7 +179,7 @@ fn model(app: &App) -> Model {
 // In this case we play a simple sine wave at the audio's current frequency in `hz`.
 fn audio(audio: &mut Audio, buffer: &mut Buffer) {
     let sample_rate = buffer.sample_rate() as f64;
-    let volume = 0.5;
+    let volume = if audio.playing { 0.5 } else { 0.0 }; // Use 0.0 volume if muted
     for frame in buffer.frames_mut() {
         let sine_amp = (2.0 * PI * audio.phase).sin() as f32;
         audio.phase += audio.hz / sample_rate;
@@ -232,6 +236,13 @@ fn view(app: &App, model: &Model, frame: Frame) {
         if let CardClass::Sequencer(_) = card.class {
             // Draw the letter "S" on the card
             draw.text("S")
+                .x_y(card.x, card.y)
+                .color(WHITE)
+                .font_size(32);
+        }
+        if let CardClass::Oscillator(_) = card.class {
+            // Draw the letter "S" on the card
+            draw.text("O")
                 .x_y(card.x, card.y)
                 .color(WHITE)
                 .font_size(32);
@@ -404,6 +415,32 @@ fn update_sound(app: &App, model: &mut Model) {
         .chain
         .iter()
         .position(|card| matches!(card.class, CardClass::Sequencer(_)));
+
+    let oscillator_index = model
+        .chain
+        .iter()
+        .position(|card| matches!(card.class, CardClass::Oscillator(_)));
+
+    if let Some(index) = oscillator_index {
+        // Check if the card at the index is still a Sequencer
+        if let Some(CardClass::Oscillator(seq)) =
+            model.chain.get_mut(index).map(|card| &mut card.class)
+        {
+            model
+                .stream
+                .send(move |audio| {
+                    audio.playing = true;
+                })
+                .unwrap();
+        }
+    } else {
+        model
+            .stream
+            .send(move |audio| {
+                audio.playing = false;
+            })
+            .unwrap();
+    }
 
     if let Some(index) = sequencer_index {
         // Check if the card at the index is still a Sequencer
