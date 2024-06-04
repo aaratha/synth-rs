@@ -16,11 +16,44 @@ struct Model {
     selected_card: Option<usize>, // Index of the selected Card
     hand: Vec<Card>,
     chain: Vec<Card>,
+    last_update: std::time::Instant,
 }
 
 struct Audio {
     phase: f64,
     hz: f64,
+}
+
+#[derive(Clone, Debug)]
+struct Oscillator {
+    frequency: f32,
+    amplitude: f32,
+    phase: f32,
+}
+
+#[derive(Clone, Debug)]
+struct Sequencer {
+    sequence: Vec<f32>,
+    step: usize,
+}
+
+impl Sequencer {
+    fn new(sequence: Vec<f32>, step: usize) -> Self {
+        Self { sequence, step }
+    }
+
+    fn next_value(&mut self) -> f32 {
+        let value = self.sequence[self.step];
+        self.step = (self.step + 1) % self.sequence.len();
+        value
+    }
+}
+
+#[derive(Clone, Debug)]
+enum CardClass {
+    Oscillator(Oscillator),
+    Sequencer(Sequencer),
+    // Add more variants here as needed
 }
 
 #[derive(Clone, Debug)]
@@ -37,6 +70,7 @@ struct Card {
     rotation: f32,
     scale: f32,
     start_time: f32,
+    class: CardClass,
 }
 
 fn model(app: &App) -> Model {
@@ -98,11 +132,16 @@ fn model(app: &App) -> Model {
                 y_last: 0.0,
                 y_targ: 0.0,
                 w: 100.0,
-                h: 100.0,
+                h: 140.0,
                 dragging: false,
                 rotation: 0.0,
                 scale: 1.0,
                 start_time: 0.0,
+                class: CardClass::Oscillator(Oscillator {
+                    frequency: 440.0,
+                    amplitude: 0.5,
+                    phase: 0.0,
+                }),
             },
             Card {
                 x: 100.0,
@@ -112,11 +151,15 @@ fn model(app: &App) -> Model {
                 y_last: 100.0,
                 y_targ: 100.0,
                 w: 100.0,
-                h: 100.0,
+                h: 140.0,
                 dragging: false,
                 rotation: 0.0,
                 scale: 1.0,
                 start_time: 0.0,
+                class: CardClass::Sequencer(Sequencer {
+                    sequence: vec![0.8, 1.0, 1.2, 1.0],
+                    step: 0,
+                }),
             },
         ],
         is_updating: false,
@@ -124,6 +167,7 @@ fn model(app: &App) -> Model {
         selected_card: None,
         hand: vec![],
         chain: vec![],
+        last_update: std::time::Instant::now(),
     }
 }
 
@@ -153,24 +197,6 @@ fn key_pressed(_app: &App, model: &mut Model, key: Key) {
             } else {
                 model.stream.play().unwrap();
             }
-        }
-        // Raise the frequency when the up key is pressed.
-        Key::Up => {
-            model
-                .stream
-                .send(|audio| {
-                    audio.hz += 10.0;
-                })
-                .unwrap();
-        }
-        // Lower the frequency when the down key is pressed.
-        Key::Down => {
-            model
-                .stream
-                .send(|audio| {
-                    audio.hz -= 10.0;
-                })
-                .unwrap();
         }
         _ => {}
     }
@@ -234,7 +260,7 @@ fn mouse_pressed(app: &App, model: &mut Model, _button: MouseButton) {
     }
 }
 
-fn mouse_released(app: &App, model: &mut Model, _button: MouseButton) {
+fn mouse_released(_app: &App, model: &mut Model, _button: MouseButton) {
     model.is_mouse_pressed = false;
     if let Some(selected) = model.selected_card {
         let card = &mut model.cards[selected];
@@ -271,7 +297,7 @@ fn update(app: &App, model: &mut Model, _update: Update) {
     handle_drag(app, model);
     update_cards(app, model);
     animations(app, model);
-    lerp(app, model);
+    lerp(model);
     update_sound(app, model)
 }
 
@@ -343,8 +369,7 @@ fn update_cards(app: &App, model: &mut Model) {
     }
 }
 
-fn lerp(app: &App, model: &mut Model) {
-    let t = app.time;
+fn lerp(model: &mut Model) {
     for card in model.cards.iter_mut() {
         card.x += (card.x_targ - card.x) * 0.3;
         card.y += (card.y_targ - card.y) * 0.3;
@@ -353,10 +378,49 @@ fn lerp(app: &App, model: &mut Model) {
 
 fn update_sound(app: &App, model: &mut Model) {
     let hz_increment = 1.0 * (app.time as f64).sin();
-    model
-        .stream
-        .send(move |audio| {
-            audio.hz += hz_increment;
-        })
-        .unwrap();
+
+    // Calculate the time between updates for 120 beats per minute
+    let update_interval = std::time::Duration::from_secs_f64(60.0 / 120.0);
+
+    // Check if enough time has passed since the last update
+    if model.last_update.elapsed() < update_interval {
+        return;
+    }
+
+    // Update the last update time
+    model.last_update = std::time::Instant::now();
+
+    // Check if there is a sequencer in the chain
+    let sequencer_index = model
+        .chain
+        .iter()
+        .position(|card| matches!(card.class, CardClass::Sequencer(_)));
+
+    if let Some(index) = sequencer_index {
+        // Check if the card at the index is still a Sequencer
+        if let Some(CardClass::Sequencer(seq)) =
+            model.chain.get_mut(index).map(|card| &mut card.class)
+        {
+            // Update the frequency based on the sequencer
+            let next_value = seq.next_value();
+            let new_hz = next_value as f64;
+
+            let base_hz = 440.0; // Set this to your desired base frequency
+
+            model
+                .stream
+                .send(move |audio| {
+                    audio.hz = base_hz * new_hz;
+                })
+                .unwrap();
+        }
+    } else {
+        // If there's no sequencer in the chain, update the frequency normally
+        model
+            .stream
+            .send(move |audio| {
+                audio.hz += hz_increment;
+            })
+            .unwrap();
+    }
 }
