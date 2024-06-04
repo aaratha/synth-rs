@@ -16,13 +16,17 @@ struct Model {
     selected_card: Option<usize>, // Index of the selected Card
     hand: Vec<Card>,
     chain: Vec<Card>,
-    last_update: std::time::Instant,
+    bpm: f32,
+    last_update: f32,
+    beat_time: f32,
 }
 
 struct Audio {
     phase: f64,
     hz: f64,
     playing: bool,
+    envelope: f32,
+    beat_time: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -43,9 +47,13 @@ impl Sequencer {
 }
 
 #[derive(Clone, Debug)]
+struct Envelope {}
+
+#[derive(Clone, Debug)]
 enum CardClass {
     Oscillator(Oscillator),
     Sequencer(Sequencer),
+    Envelope(Envelope),
     // Add more variants here as needed
 }
 
@@ -84,6 +92,8 @@ fn model(app: &App) -> Model {
         phase: 0.0,
         hz: 440.0,
         playing: false,
+        envelope: 0.0, // Initialize to 0
+        beat_time: 0.0,
     };
 
     let stream = audio_host
@@ -151,21 +161,42 @@ fn model(app: &App) -> Model {
                     step: 0,
                 }),
             },
+            Card {
+                x: 100.0,
+                x_last: 100.0,
+                x_targ: 100.0,
+                y: 100.0,
+                y_last: 100.0,
+                y_targ: 100.0,
+                w: 100.0,
+                h: 140.0,
+                dragging: false,
+                rotation: 0.0,
+                scale: 1.0,
+                start_time: 0.0,
+                class: CardClass::Envelope(Envelope {}),
+            },
         ],
         is_updating: false,
         grid_slots,
         selected_card: None,
         hand: vec![],
         chain: vec![],
-        last_update: std::time::Instant::now(),
+        bpm: 120.0,
+        last_update: 0.0,
+        beat_time: 0.0,
     }
 }
 
-// A function that renders the given `Audio` to the given `Buffer`.
-// In this case we play a simple sine wave at the audio's current frequency in `hz`.
 fn audio(audio: &mut Audio, buffer: &mut Buffer) {
     let sample_rate = buffer.sample_rate() as f64;
-    let volume = if audio.playing { 0.5 } else { 0.0 }; // Use 0.0 volume if muted
+    let max_volume = 0.5;
+    let volume = if audio.playing {
+        max_volume * audio.envelope.min(1.0) // Ensure envelope doesn't exceed 1.0
+    } else {
+        0.0
+    };
+
     for frame in buffer.frames_mut() {
         let sine_amp = (2.0 * PI * audio.phase).sin() as f32;
         audio.phase += audio.hz / sample_rate;
@@ -173,14 +204,13 @@ fn audio(audio: &mut Audio, buffer: &mut Buffer) {
             audio.phase -= 1.0;
         }
         for channel in frame {
-            *channel = sine_amp * volume;
+            *channel = sine_amp * volume as f32;
         }
     }
 }
 
 fn key_pressed(_app: &App, model: &mut Model, key: Key) {
     match key {
-        // Pause or unpause the audio when Space is pressed.
         Key::Space => {
             if model.stream.is_playing() {
                 model.stream.pause().unwrap();
@@ -223,24 +253,26 @@ fn view(app: &App, model: &Model, frame: Frame) {
             .rotate(card.rotation)
             .color(BLUE);
 
-        // Check if the card is a Sequencer
         if let CardClass::Sequencer(_) = card.class {
-            // Draw the letter "S" on the card
             draw.text("S")
                 .x_y(card.x, card.y)
                 .color(WHITE)
                 .font_size(32);
         }
         if let CardClass::Oscillator(_) = card.class {
-            // Draw the letter "S" on the card
             draw.text("O")
+                .x_y(card.x, card.y)
+                .color(WHITE)
+                .font_size(32);
+        }
+        if let CardClass::Envelope(_) = card.class {
+            draw.text("E")
                 .x_y(card.x, card.y)
                 .color(WHITE)
                 .font_size(32);
         }
     }
 
-    // Draw a line!
     draw.line()
         .weight(10.0 + (t.sin() * 0.5 + 0.5) * 90.0)
         .caps_round()
@@ -305,6 +337,17 @@ fn handle_drag(app: &App, model: &mut Model) {
 }
 
 fn update(app: &App, model: &mut Model, _update: Update) {
+    let now = app.time;
+    let time_since_last_update = now - model.last_update;
+    let beat_duration = 60.0 / model.bpm;
+
+    model.beat_time += time_since_last_update as f32;
+
+    if model.beat_time >= beat_duration {
+        model.beat_time = 0.0;
+    }
+
+    model.last_update = now;
     handle_drag(app, model);
     update_cards(app, model);
     animations(app, model);
@@ -312,7 +355,6 @@ fn update(app: &App, model: &mut Model, _update: Update) {
     update_sound(app, model)
 }
 
-// Function to snap coordinates to the nearest grid slot
 fn snap_to_grid(x: f32, y: f32, grid_slots: &Vec<Point2>) -> (f32, f32) {
     let mut nearest_slot = grid_slots[0];
     let mut min_distance = distance(x, y, nearest_slot.x, nearest_slot.y);
@@ -328,7 +370,6 @@ fn snap_to_grid(x: f32, y: f32, grid_slots: &Vec<Point2>) -> (f32, f32) {
     (nearest_slot.x, nearest_slot.y)
 }
 
-// Function to calculate the distance between two points
 fn distance(x1: f32, y1: f32, x2: f32, y2: f32) -> f32 {
     ((x2 - x1).powi(2) + (y2 - y1).powi(2)).sqrt()
 }
@@ -338,7 +379,7 @@ fn animations(app: &App, model: &mut Model) {
     let wobble_amplitude = 0.4;
     let wobble_speed = 1.0;
     let frequency = 20.0;
-    let lerp_rate = 0.4; // Adjust this value to change the speed of the lerp
+    let lerp_rate = 0.4;
 
     for (i, card) in model.cards.iter_mut().enumerate() {
         let t = app.time - card.start_time;
@@ -390,18 +431,9 @@ fn lerp(model: &mut Model) {
 fn update_sound(app: &App, model: &mut Model) {
     let hz_increment = 1.0 * (app.time as f64).sin();
 
-    // Calculate the time between updates for 120 beats per minute
-    let update_interval = std::time::Duration::from_secs_f64(60.0 / 120.0);
+    let bpm = 120.0;
+    let beat_duration = 60.0 / bpm; // Duration of one beat in seconds
 
-    // Check if enough time has passed since the last update
-    if model.last_update.elapsed() < update_interval {
-        return;
-    }
-
-    // Update the last update time
-    model.last_update = std::time::Instant::now();
-
-    // Check if there is a sequencer in the chain
     let sequencer_index = model
         .chain
         .iter()
@@ -412,9 +444,13 @@ fn update_sound(app: &App, model: &mut Model) {
         .iter()
         .position(|card| matches!(card.class, CardClass::Oscillator(_)));
 
+    let envelope_index = model
+        .chain
+        .iter()
+        .position(|card| matches!(card.class, CardClass::Envelope(_)));
+
     if let Some(index) = oscillator_index {
-        // Check if the card at the index is still a Sequencer
-        if let Some(CardClass::Oscillator(_seq)) =
+        if let Some(CardClass::Oscillator(_osc)) =
             model.chain.get_mut(index).map(|card| &mut card.class)
         {
             model
@@ -434,29 +470,53 @@ fn update_sound(app: &App, model: &mut Model) {
     }
 
     if let Some(index) = sequencer_index {
-        // Check if the card at the index is still a Sequencer
         if let Some(CardClass::Sequencer(seq)) =
             model.chain.get_mut(index).map(|card| &mut card.class)
         {
-            // Update the frequency based on the sequencer
-            let next_value = seq.next_value();
-            let new_hz = next_value as f64;
+            if model.beat_time == 0.0 {
+                let next_value = seq.next_value();
+                let new_hz = next_value as f64;
 
-            let base_hz = 440.0; // Set this to your desired base frequency
+                let base_hz = 440.0;
 
-            model
-                .stream
-                .send(move |audio| {
-                    audio.hz = base_hz * new_hz;
-                })
-                .unwrap();
+                model
+                    .stream
+                    .send(move |audio| {
+                        audio.hz = base_hz * new_hz;
+                    })
+                    .unwrap();
+            }
         }
     } else {
-        // If there's no sequencer in the chain, update the frequency normally
         model
             .stream
             .send(move |audio| {
                 audio.hz += hz_increment;
+            })
+            .unwrap();
+    }
+
+    if let Some(index) = envelope_index {
+        if let Some(CardClass::Envelope(_env)) =
+            model.chain.get_mut(index).map(|card| &mut card.class)
+        {
+            let envelope = if model.beat_time < beat_duration {
+                model.beat_time / (beat_duration / 2.0) // Increasing part of the triangle
+            } else {
+                1.0 - ((model.beat_time - beat_duration / 2.0) / (beat_duration / 2.0))
+                // Decreasing part of the triangle
+            };
+
+            model
+                .stream
+                .send(move |audio| audio.envelope = envelope)
+                .unwrap();
+        }
+    } else {
+        model
+            .stream
+            .send(move |audio| {
+                audio.envelope = 1.0;
             })
             .unwrap();
     }
