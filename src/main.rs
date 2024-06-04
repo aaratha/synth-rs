@@ -227,6 +227,15 @@ fn view(app: &App, model: &Model, frame: Frame) {
             .w_h(card.w * card.scale, card.h * card.scale)
             .rotate(card.rotation)
             .color(BLUE);
+
+        // Check if the card is a Sequencer
+        if let CardClass::Sequencer(_) = card.class {
+            // Draw the letter "S" on the card
+            draw.text("S")
+                .x_y(card.x, card.y)
+                .color(WHITE)
+                .font_size(32);
+        }
     }
 
     // Draw a line!
