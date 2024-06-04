@@ -500,16 +500,19 @@ fn update_sound(app: &App, model: &mut Model) {
         if let Some(CardClass::Envelope(_env)) =
             model.chain.get_mut(index).map(|card| &mut card.class)
         {
-            let envelope = if model.beat_time < beat_duration {
-                model.beat_time / (beat_duration / 2.0) // Increasing part of the triangle
+            let attack = 1.0;
+            let envelope = if model.beat_time < beat_duration * attack {
+                1.0 - ((model.beat_time - beat_duration * (1.0 - attack))
+                    / (beat_duration * attack))
             } else {
-                1.0 - ((model.beat_time - beat_duration / 2.0) / (beat_duration / 2.0))
-                // Decreasing part of the triangle
+                model.beat_time / (beat_duration * (1.0 - attack))
             };
 
             model
                 .stream
-                .send(move |audio| audio.envelope = envelope)
+                .send(move |audio| {
+                    audio.envelope = envelope;
+                })
                 .unwrap();
         }
     } else {
