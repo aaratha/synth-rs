@@ -238,6 +238,14 @@ fn view(app: &App, model: &Model, frame: Frame) {
     }
 
     for card in model.cards.iter() {
+        if card.dragging {
+            // Draw shadow
+            draw.rect()
+                .x_y(card.x * 0.9, card.y - 15.0)
+                .w_h((card.w - 10.0) * card.scale, card.h * card.scale)
+                .rotate(card.rotation)
+                .color(rgba(0.0, 0.0, 0.0, 0.5));
+        }
         draw.rect()
             .x_y(card.x, card.y)
             .w_h(card.w * card.scale, card.h * card.scale)
