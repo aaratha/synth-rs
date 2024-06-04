@@ -26,7 +26,6 @@ struct Audio {
     hz: f64,
     playing: bool,
     envelope: f32,
-    beat_time: f32,
 }
 
 #[derive(Clone, Debug)]
@@ -124,7 +123,6 @@ fn model(app: &App) -> Model {
         hz: 440.0,
         playing: false,
         envelope: 0.0, // Initialize to 0
-        beat_time: 0.0,
     };
 
     let stream = audio_host
