@@ -74,6 +74,37 @@ struct Card {
     class: CardClass,
 }
 
+impl Card {
+    fn default(class: CardClass) -> Self {
+        Card {
+            x: 0.0,
+            x_last: 0.0,
+            x_targ: 0.0,
+            y: 0.0,
+            y_last: 0.0,
+            y_targ: 0.0,
+            w: 100.0,
+            h: 140.0,
+            dragging: false,
+            rotation: 0.0,
+            scale: 1.0,
+            start_time: 0.0,
+            class,
+        }
+    }
+
+    fn new(x: f32, y: f32, class: CardClass) -> Self {
+        let mut card = Card::default(class);
+        card.x = x;
+        card.x_last = x;
+        card.x_targ = x;
+        card.y = y;
+        card.y_last = y;
+        card.y_targ = y;
+        card
+    }
+}
+
 fn model(app: &App) -> Model {
     // Create a window to receive key pressed events.
     app.new_window()
@@ -128,54 +159,16 @@ fn model(app: &App) -> Model {
         stream,
         is_mouse_pressed: false,
         cards: vec![
-            Card {
-                x: 0.0,
-                x_last: 0.0,
-                x_targ: 0.0,
-                y: 0.0,
-                y_last: 0.0,
-                y_targ: 0.0,
-                w: 100.0,
-                h: 140.0,
-                dragging: false,
-                rotation: 0.0,
-                scale: 1.0,
-                start_time: 0.0,
-                class: CardClass::Oscillator(Oscillator {}),
-            },
-            Card {
-                x: 100.0,
-                x_last: 100.0,
-                x_targ: 100.0,
-                y: 100.0,
-                y_last: 100.0,
-                y_targ: 100.0,
-                w: 100.0,
-                h: 140.0,
-                dragging: false,
-                rotation: 0.0,
-                scale: 1.0,
-                start_time: 0.0,
-                class: CardClass::Sequencer(Sequencer {
+            Card::new(0.0, 0.0, CardClass::Oscillator(Oscillator {})),
+            Card::new(
+                100.0,
+                100.0,
+                CardClass::Sequencer(Sequencer {
                     sequence: vec![0.8, 1.0, 1.2, 1.0],
                     step: 0,
                 }),
-            },
-            Card {
-                x: 100.0,
-                x_last: 100.0,
-                x_targ: 100.0,
-                y: 100.0,
-                y_last: 100.0,
-                y_targ: 100.0,
-                w: 100.0,
-                h: 140.0,
-                dragging: false,
-                rotation: 0.0,
-                scale: 1.0,
-                start_time: 0.0,
-                class: CardClass::Envelope(Envelope {}),
-            },
+            ),
+            Card::new(200.0, 200.0, CardClass::Envelope(Envelope {})),
         ],
         is_updating: false,
         grid_slots,
