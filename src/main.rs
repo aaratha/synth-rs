@@ -10,12 +10,12 @@ fn main() {
 struct Model {
     stream: audio::Stream<Audio>,
     is_mouse_pressed: bool,
-    rects: Vec<Rectangle>,
+    cards: Vec<Card>,
     is_updating: bool,
     grid_slots: Vec<Point2>,
-    selected_card: Option<usize>, // Index of the selected rectangle
-    hand: Vec<Rectangle>,
-    chain: Vec<Rectangle>,
+    selected_card: Option<usize>, // Index of the selected Card
+    hand: Vec<Card>,
+    chain: Vec<Card>,
 }
 
 struct Audio {
@@ -24,16 +24,19 @@ struct Audio {
 }
 
 #[derive(Clone, Debug)]
-struct Rectangle {
+struct Card {
     x: f32,
     x_last: f32,
+    x_targ: f32,
     y: f32,
     y_last: f32,
+    y_targ: f32,
     w: f32,
     h: f32,
     dragging: bool,
     rotation: f32,
     scale: f32,
+    start_time: f32,
 }
 
 fn model(app: &App) -> Model {
@@ -86,28 +89,34 @@ fn model(app: &App) -> Model {
     Model {
         stream,
         is_mouse_pressed: false,
-        rects: vec![
-            Rectangle {
+        cards: vec![
+            Card {
                 x: 0.0,
                 x_last: 0.0,
+                x_targ: 0.0,
                 y: 0.0,
                 y_last: 0.0,
+                y_targ: 0.0,
                 w: 100.0,
                 h: 100.0,
                 dragging: false,
                 rotation: 0.0,
                 scale: 1.0,
+                start_time: 0.0,
             },
-            Rectangle {
+            Card {
                 x: 100.0,
                 x_last: 100.0,
+                x_targ: 100.0,
                 y: 100.0,
                 y_last: 100.0,
+                y_targ: 100.0,
                 w: 100.0,
                 h: 100.0,
                 dragging: false,
                 rotation: 0.0,
                 scale: 1.0,
+                start_time: 0.0,
             },
         ],
         is_updating: false,
@@ -186,11 +195,11 @@ fn view(app: &App, model: &Model, frame: Frame) {
             .stroke(BLACK);
     }
 
-    for rect in model.rects.iter() {
+    for card in model.cards.iter() {
         draw.rect()
-            .x_y(rect.x, rect.y)
-            .w_h(rect.w * rect.scale, rect.h * rect.scale)
-            .rotate(rect.rotation)
+            .x_y(card.x, card.y)
+            .w_h(card.w * card.scale, card.h * card.scale)
+            .rotate(card.rotation)
             .color(BLUE);
     }
 
@@ -210,14 +219,15 @@ fn mouse_pressed(app: &App, model: &mut Model, _button: MouseButton) {
         let y = app.mouse.y;
         println!("Mouse pressed at x: {}, y: {}", x, y);
         model.is_mouse_pressed = true;
-        for (i, rect) in model.rects.iter_mut().enumerate() {
-            if x >= rect.x - rect.w / 2.0
-                && x <= rect.x + rect.w / 2.0
-                && y >= rect.y - rect.h / 2.0
-                && y <= rect.y + rect.h / 2.0
+        for (i, card) in model.cards.iter_mut().enumerate() {
+            if x >= card.x - card.w / 2.0
+                && x <= card.x + card.w / 2.0
+                && y >= card.y - card.h / 2.0
+                && y <= card.y + card.h / 2.0
             {
-                rect.dragging = true;
+                card.dragging = true;
                 model.selected_card = Some(i);
+                card.start_time = app.time;
                 break;
             }
         }
@@ -227,12 +237,12 @@ fn mouse_pressed(app: &App, model: &mut Model, _button: MouseButton) {
 fn mouse_released(app: &App, model: &mut Model, _button: MouseButton) {
     model.is_mouse_pressed = false;
     if let Some(selected) = model.selected_card {
-        let rect = &mut model.rects[selected];
-        if rect.dragging {
-            let (new_x, new_y) = snap_to_grid(rect.x, rect.y, &model.grid_slots);
-            rect.x = new_x;
-            rect.y = new_y;
-            rect.dragging = false;
+        let card = &mut model.cards[selected];
+        if card.dragging {
+            let (new_x, new_y) = snap_to_grid(card.x_targ, card.y_targ, &model.grid_slots);
+            card.x_targ = new_x;
+            card.y_targ = new_y;
+            card.dragging = false;
             model.is_updating = true;
             println!("is_updating: {}", model.is_updating)
         }
@@ -242,17 +252,17 @@ fn mouse_released(app: &App, model: &mut Model, _button: MouseButton) {
 
 fn handle_drag(app: &App, model: &mut Model) {
     if let Some(selected) = model.selected_card {
-        let rect = &mut model.rects[selected];
+        let card = &mut model.cards[selected];
         let x = app.mouse.x;
         let y = app.mouse.y;
-        rect.x_last = rect.x;
-        rect.y_last = rect.y;
-        if model.is_mouse_pressed && rect.dragging {
-            rect.x = x;
-            rect.y = y;
+        card.x_last = card.x_targ;
+        card.y_last = card.y_targ;
+        if model.is_mouse_pressed && card.dragging {
+            card.x_targ = x;
+            card.y_targ = y;
         } else {
-            rect.x = rect.x_last;
-            rect.y = rect.y_last;
+            card.x_targ = card.x_last;
+            card.y_targ = card.y_last;
         }
     }
 }
@@ -261,6 +271,8 @@ fn update(app: &App, model: &mut Model, _update: Update) {
     handle_drag(app, model);
     update_cards(app, model);
     animations(app, model);
+    lerp(app, model);
+    update_sound(app, model)
 }
 
 // Function to snap coordinates to the nearest grid slot
@@ -285,10 +297,30 @@ fn distance(x1: f32, y1: f32, x2: f32, y2: f32) -> f32 {
 }
 
 fn animations(app: &App, model: &mut Model) {
-    let t = app.time;
-    for rect in model.rects.iter_mut() {
-        rect.rotation += 0.01;
-        rect.scale = 1.0 + 0.2 * t.sin()
+    let decay_rate = 3.0;
+    let wobble_amplitude = 0.4;
+    let wobble_speed = 1.0;
+    let frequency = 20.0;
+    let lerp_rate = 0.4; // Adjust this value to change the speed of the lerp
+
+    for (i, card) in model.cards.iter_mut().enumerate() {
+        let t = app.time - card.start_time;
+        card.rotation += (t * frequency * wobble_speed).sin()
+            * wobble_amplitude
+            * (-decay_rate * t * wobble_speed).exp();
+        let target_rotation = 0.004 * (card.x_targ - card.x);
+        card.rotation = card.rotation * (1.0 - lerp_rate) + target_rotation * lerp_rate;
+
+        if Some(i) == model.selected_card {
+            if card.scale < 1.3 {
+                card.scale += 0.04;
+            }
+        } else {
+            if card.scale > 1.0 {
+                let target_scale = 1.0;
+                card.scale = card.scale * (1.0 - lerp_rate) + target_scale * lerp_rate;
+            }
+        }
     }
 }
 
@@ -297,16 +329,34 @@ fn update_cards(app: &App, model: &mut Model) {
     if model.is_updating {
         model.hand.clear();
         model.chain.clear();
-        for rect in model.rects.iter_mut() {
-            if rect.y >= win.bottom() + win.h() / 3.0 {
-                model.chain.push(rect.clone());
+        for card in model.cards.iter_mut() {
+            if card.y >= win.bottom() + win.h() / 3.0 {
+                model.chain.push(card.clone());
                 println!("Chain: {:?}", model.chain);
-            } else if rect.y <= win.bottom() + win.h() / 3.0 {
-                model.hand.push(rect.clone());
+            } else if card.y <= win.bottom() + win.h() / 3.0 {
+                model.hand.push(card.clone());
                 println!("Hand: {:?}", model.hand);
             }
         }
         model.is_updating = false;
         println!("is_updating: {}", model.is_updating)
     }
+}
+
+fn lerp(app: &App, model: &mut Model) {
+    let t = app.time;
+    for card in model.cards.iter_mut() {
+        card.x += (card.x_targ - card.x) * 0.3;
+        card.y += (card.y_targ - card.y) * 0.3;
+    }
+}
+
+fn update_sound(app: &App, model: &mut Model) {
+    let hz_increment = 1.0 * (app.time as f64).sin();
+    model
+        .stream
+        .send(move |audio| {
+            audio.hz += hz_increment;
+        })
+        .unwrap();
 }
