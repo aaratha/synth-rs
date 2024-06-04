@@ -26,11 +26,7 @@ struct Audio {
 }
 
 #[derive(Clone, Debug)]
-struct Oscillator {
-    frequency: f32,
-    amplitude: f32,
-    phase: f32,
-}
+struct Oscillator {}
 
 #[derive(Clone, Debug)]
 struct Sequencer {
@@ -39,10 +35,6 @@ struct Sequencer {
 }
 
 impl Sequencer {
-    fn new(sequence: Vec<f32>, step: usize) -> Self {
-        Self { sequence, step }
-    }
-
     fn next_value(&mut self) -> f32 {
         let value = self.sequence[self.step];
         self.step = (self.step + 1) % self.sequence.len();
@@ -139,11 +131,7 @@ fn model(app: &App) -> Model {
                 rotation: 0.0,
                 scale: 1.0,
                 start_time: 0.0,
-                class: CardClass::Oscillator(Oscillator {
-                    frequency: 440.0,
-                    amplitude: 0.5,
-                    phase: 0.0,
-                }),
+                class: CardClass::Oscillator(Oscillator {}),
             },
             Card {
                 x: 100.0,
@@ -426,7 +414,7 @@ fn update_sound(app: &App, model: &mut Model) {
 
     if let Some(index) = oscillator_index {
         // Check if the card at the index is still a Sequencer
-        if let Some(CardClass::Oscillator(seq)) =
+        if let Some(CardClass::Oscillator(_seq)) =
             model.chain.get_mut(index).map(|card| &mut card.class)
         {
             model
