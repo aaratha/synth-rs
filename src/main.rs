@@ -17,7 +17,6 @@ struct Model {
     hand: Vec<Card>,
     chain: Vec<Card>,
     last_update: std::time::Instant,
-    stream_playing: bool,
 }
 
 struct Audio {
@@ -105,22 +104,22 @@ fn model(app: &App) -> Model {
 
     // Define the grid slots
     let mut grid_slots = vec![];
-    let grid_size = 100.0;
+    let grid_size = 110.0;
     let num_slots = 5;
     let win = app.window_rect();
-
-    // Bottom row
-    let bottom_y = win.bottom() + grid_size;
-    for i in 0..num_slots {
-        let x = win.left() + grid_size + i as f32 * grid_size;
-        grid_slots.push(pt2(x, bottom_y));
-    }
 
     // Middle row
     let middle_y = win.bottom() + win.h() / 2.0;
     for i in 0..num_slots {
-        let x = win.left() + grid_size + i as f32 * grid_size;
+        let x = win.left() + 2.6 * grid_size + i as f32 * grid_size;
         grid_slots.push(pt2(x, middle_y));
+    }
+
+    // Bottom row
+    let bottom_y = win.bottom() + grid_size;
+    for i in 0..num_slots {
+        let x = win.left() + 2.6 * grid_size + i as f32 * grid_size;
+        grid_slots.push(pt2(x, bottom_y));
     }
 
     Model {
@@ -171,7 +170,6 @@ fn model(app: &App) -> Model {
         hand: vec![],
         chain: vec![],
         last_update: std::time::Instant::now(),
-        stream_playing: true, // Initialize to true as the stream is initially playing
     }
 }
 
@@ -219,9 +217,14 @@ fn view(app: &App, model: &Model, frame: Frame) {
     for slot in &model.grid_slots {
         draw.rect()
             .x_y(slot.x, slot.y)
-            .w_h(50.0, 50.0)
-            .color(GREEN)
-            .stroke_weight(1.0)
+            .w_h(110.0, 150.0)
+            .color(Rgba::new(1.0, 1.0, 1.0, 0.2))
+            .stroke_weight(0.4);
+        draw.rect()
+            .x_y(slot.x, slot.y)
+            .w_h(100.0, 140.0)
+            .color(Rgba::new(1.0, 1.0, 1.0, 0.2))
+            .stroke_weight(0.2)
             .stroke(BLACK);
     }
 
