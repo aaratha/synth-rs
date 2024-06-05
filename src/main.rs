@@ -46,13 +46,28 @@ impl Sequencer {
 }
 
 #[derive(Clone, Debug, PartialEq)]
-struct Envelope {}
+struct Envelope {
+    attack: f32,
+    decay: f32,
+    sustain: f32,
+    release: f32,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+struct Delay {
+    delay_time: f32,
+    feedback: f32,
+    wet: f32,
+    buffer: Vec<f32>,
+    write_index: usize,
+}
 
 #[derive(Clone, Debug, PartialEq)]
 enum CardClass {
     Oscillator(Oscillator),
     Sequencer(Sequencer),
     Envelope(Envelope),
+    Delay(Delay),
     // Add more variants here as needed
 }
 
@@ -145,7 +160,27 @@ fn model(app: &App) -> Model {
                     step: 0,
                 }),
             ),
-            Card::new(200.0, 200.0, CardClass::Envelope(Envelope {})),
+            Card::new(
+                200.0,
+                200.0,
+                CardClass::Envelope(Envelope {
+                    attack: 0.1,
+                    decay: 1.0,
+                    sustain: 0.4,
+                    release: 0.5,
+                }),
+            ),
+            Card::new(
+                300.0,
+                300.0,
+                CardClass::Delay(Delay {
+                    delay_time: 0.5,
+                    feedback: 0.5,
+                    wet: 0.5,
+                    buffer: vec![0.0; 44100], // 1 second buffer at 44100 Hz sample rate
+                    write_index: 0,
+                }),
+            ),
         ],
         is_updating: false,
         grid_slots,
@@ -228,7 +263,7 @@ fn view(app: &App, model: &Model, frame: Frame) {
                 .x_y(card.x * 0.9, card.y - 15.0)
                 .w_h((card.w - 10.0) * card.scale, card.h * card.scale)
                 .rotate(card.rotation)
-                .color(rgba(0.0, 0.0, 0.0, 0.5));
+                .color(rgba(0.0, 0.0, 0.0, 0.5)); // black
         }
         draw.rect()
             .x_y(card.x, card.y)
@@ -239,7 +274,8 @@ fn view(app: &App, model: &Model, frame: Frame) {
         let text = match card.class {
             CardClass::Sequencer(_) => "S",
             CardClass::Oscillator(_) => "O",
-            CardClass::Envelope(_) => "E",
+            CardClass::Envelope(_) => "E:Up",
+            CardClass::Delay(_) => "D",
         };
 
         draw.text(text)
@@ -272,7 +308,6 @@ fn mouse_pressed(app: &App, model: &mut Model, _button: MouseButton) {
     if model.selected_card.is_none() {
         let x = app.mouse.x;
         let y = app.mouse.y;
-        println!("Mouse pressed at x: {}, y: {}", x, y);
         model.is_mouse_pressed = true;
         for (i, card) in model.cards.iter_mut().enumerate() {
             if x >= card.x - card.w / 2.0
@@ -432,6 +467,11 @@ fn update_sound(app: &App, model: &mut Model) {
         .iter()
         .position(|card| matches!(card.class, CardClass::Envelope(_)));
 
+    let delay_index = model
+        .chain
+        .iter()
+        .position(|card| matches!(card.class, CardClass::Delay(_)));
+
     if let Some(_) = oscillator_index {
         model.stream.send(|audio| audio.playing = true).unwrap();
     } else {
@@ -460,15 +500,25 @@ fn update_sound(app: &App, model: &mut Model) {
     }
 
     if let Some(index) = envelope_index {
-        if let Some(CardClass::Envelope(_env)) =
+        if let Some(CardClass::Envelope(env)) =
             model.chain.get_mut(index).map(|card| &mut card.class)
         {
-            let attack = 1.0;
-            let envelope = if model.beat_time < beat_duration as f32 * attack {
-                1.0 - ((model.beat_time - beat_duration as f32 * (1.0 - attack))
-                    / (beat_duration as f32 * attack)) as f32
+            let Envelope {
+                attack,
+                decay,
+                sustain,
+                release,
+            } = env;
+            let envelope = if model.beat_time < beat_duration as f32 * *attack {
+                (model.beat_time / (beat_duration as f32 * *attack)).min(1.0)
+            } else if model.beat_time < beat_duration as f32 * (*attack + *decay) {
+                let decay_time = model.beat_time - beat_duration as f32 * *attack;
+                *sustain + (1.0 - *sustain) * (1.0 - decay_time / (beat_duration as f32 * *decay))
+            } else if model.beat_time < beat_duration as f32 * (*attack + *decay + *release) {
+                let release_time = model.beat_time - beat_duration as f32 * (*attack + *decay);
+                *sustain * (1.0 - release_time / (beat_duration as f32 * *release))
             } else {
-                (model.beat_time / (beat_duration as f32 * (1.0 - attack))) as f32
+                0.0
             };
 
             model
@@ -481,5 +531,12 @@ fn update_sound(app: &App, model: &mut Model) {
             .stream
             .send(move |audio| audio.envelope = 1.0)
             .unwrap();
+    }
+    if let Some(index) = delay_index {
+        if let Some(CardClass::Delay(delay)) =
+            model.chain.get_mut(index).map(|card| &mut card.class)
+        {
+            // update_delay(delay, model);
+        }
     }
 }
