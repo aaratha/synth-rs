@@ -105,7 +105,6 @@ impl Card {
 }
 
 fn model(app: &App) -> Model {
-    // Create a window to receive key pressed events.
     app.new_window()
         .key_pressed(key_pressed)
         .mouse_pressed(mouse_pressed)
@@ -114,15 +113,13 @@ fn model(app: &App) -> Model {
         .build()
         .unwrap();
 
-    // Initialise the audio API so we can spawn an audio stream.
     let audio_host = audio::Host::new();
 
-    // Initialise the state that we want to live on the audio thread.
     let audio_model = Audio {
         phase: 0.0,
         hz: 440.0,
         playing: false,
-        envelope: 0.0, // Initialize to 0
+        envelope: 0.0,
     };
 
     let stream = audio_host
@@ -133,25 +130,7 @@ fn model(app: &App) -> Model {
 
     stream.play().unwrap();
 
-    // Define the grid slots
-    let mut grid_slots = vec![];
-    let grid_size = 110.0;
-    let num_slots = 5;
-    let win = app.window_rect();
-
-    // Middle row
-    let middle_y = win.bottom() + win.h() / 2.0;
-    for i in 0..num_slots {
-        let x = win.left() + 2.6 * grid_size + i as f32 * grid_size;
-        grid_slots.push(pt2(x, middle_y));
-    }
-
-    // Bottom row
-    let bottom_y = win.bottom() + grid_size;
-    for i in 0..num_slots {
-        let x = win.left() + 2.6 * grid_size + i as f32 * grid_size;
-        grid_slots.push(pt2(x, bottom_y));
-    }
+    let grid_slots = create_grid_slots(app.window_rect(), 110.0, 5);
 
     Model {
         stream,
@@ -179,11 +158,26 @@ fn model(app: &App) -> Model {
     }
 }
 
+fn create_grid_slots(win: Rect, grid_size: f32, num_slots: usize) -> Vec<Point2> {
+    let mut grid_slots = vec![];
+    let middle_y = win.bottom() + win.h() / 2.0;
+    for i in 0..num_slots {
+        let x = win.left() + 2.6 * grid_size + i as f32 * grid_size;
+        grid_slots.push(pt2(x, middle_y));
+    }
+    let bottom_y = win.bottom() + grid_size;
+    for i in 0..num_slots {
+        let x = win.left() + 2.6 * grid_size + i as f32 * grid_size;
+        grid_slots.push(pt2(x, bottom_y));
+    }
+    grid_slots
+}
+
 fn audio(audio: &mut Audio, buffer: &mut Buffer) {
     let sample_rate = buffer.sample_rate() as f64;
     let max_volume = 0.5;
     let volume = if audio.playing {
-        max_volume * audio.envelope.min(1.0) // Ensure envelope doesn't exceed 1.0
+        max_volume * audio.envelope.min(1.0)
     } else {
         0.0
     };
@@ -201,28 +195,19 @@ fn audio(audio: &mut Audio, buffer: &mut Buffer) {
 }
 
 fn key_pressed(_app: &App, model: &mut Model, key: Key) {
-    match key {
-        Key::Space => {
-            if model.stream.is_playing() {
-                model.stream.pause().unwrap();
-            } else {
-                model.stream.play().unwrap();
-            }
+    if key == Key::Space {
+        if model.stream.is_playing() {
+            model.stream.pause().unwrap();
+        } else {
+            model.stream.play().unwrap();
         }
-        _ => {}
     }
 }
 
 fn view(app: &App, model: &Model, frame: Frame) {
     let draw = app.draw();
-
     draw.background().color(DARKSLATEGRAY);
 
-    let win = app.window_rect();
-
-    let t = app.time;
-
-    // Draw grid slots
     for slot in &model.grid_slots {
         draw.rect()
             .x_y(slot.x, slot.y)
@@ -239,7 +224,6 @@ fn view(app: &App, model: &Model, frame: Frame) {
 
     for card in model.cards.iter() {
         if card.dragging {
-            // Draw shadow
             draw.rect()
                 .x_y(card.x * 0.9, card.y - 15.0)
                 .w_h((card.w - 10.0) * card.scale, card.h * card.scale)
@@ -252,24 +236,16 @@ fn view(app: &App, model: &Model, frame: Frame) {
             .rotate(card.rotation)
             .color(BLUE);
 
-        if let CardClass::Sequencer(_) = card.class {
-            draw.text("S")
-                .x_y(card.x, card.y)
-                .color(WHITE)
-                .font_size(32);
-        }
-        if let CardClass::Oscillator(_) = card.class {
-            draw.text("O")
-                .x_y(card.x, card.y)
-                .color(WHITE)
-                .font_size(32);
-        }
-        if let CardClass::Envelope(_) = card.class {
-            draw.text("E")
-                .x_y(card.x, card.y)
-                .color(WHITE)
-                .font_size(32);
-        }
+        let text = match card.class {
+            CardClass::Sequencer(_) => "S",
+            CardClass::Oscillator(_) => "O",
+            CardClass::Envelope(_) => "E",
+        };
+
+        draw.text(text)
+            .x_y(card.x, card.y)
+            .color(WHITE)
+            .font_size(32);
     }
 
     draw.to_frame(app, &frame).unwrap();
@@ -325,7 +301,6 @@ fn mouse_released(_app: &App, model: &mut Model, _button: MouseButton) {
             card.y_targ = new_y;
             card.dragging = false;
             model.is_updating = true;
-            println!("is_updating: {}", model.is_updating)
         }
         model.selected_card = None;
     }
@@ -341,7 +316,7 @@ fn handle_drag(app: &App, model: &mut Model) {
         if model.is_mouse_pressed && card.dragging {
             card.x_targ = x;
             card.y_targ = y;
-            model.is_updating = true; // Mark as updating to refresh chain and hand
+            model.is_updating = true;
         } else {
             card.x_targ = card.x_last;
             card.y_targ = card.y_last;
@@ -362,10 +337,10 @@ fn update(app: &App, model: &mut Model, _update: Update) {
 
     model.last_update = now;
     handle_drag(app, model);
-    update_cards(app, model); // Update hand and chain during dragging
+    update_cards(app, model);
     animations(app, model);
     lerp(model);
-    update_sound(app, model); // Update sound every frame
+    update_sound(app, model);
 }
 
 fn snap_to_grid(x: f32, y: f32, grid_slots: &Vec<Point2>) -> (f32, f32) {
@@ -389,7 +364,7 @@ fn distance(x1: f32, y1: f32, x2: f32, y2: f32) -> f32 {
 
 fn animations(app: &App, model: &mut Model) {
     let decay_rate = 3.0;
-    let wobble_amplitude = 0.4;
+    let wobble_amplitude = 3.0;
     let wobble_speed = 1.0;
     let frequency = 20.0;
     let lerp_rate = 0.9;
@@ -437,11 +412,10 @@ fn lerp(model: &mut Model) {
         card.y += (card.y_targ - card.y) * 0.3;
     }
 }
+
 fn update_sound(app: &App, model: &mut Model) {
     let hz_increment = 1.0 * (app.time as f64).sin();
-
-    let bpm = 120.0;
-    let beat_duration = 60.0 / bpm; // Duration of one beat in seconds
+    let beat_duration = 60.0 / model.bpm as f64;
 
     let sequencer_index = model
         .chain
@@ -458,20 +432,10 @@ fn update_sound(app: &App, model: &mut Model) {
         .iter()
         .position(|card| matches!(card.class, CardClass::Envelope(_)));
 
-    if let Some(index) = oscillator_index {
-        model
-            .stream
-            .send(|audio| {
-                audio.playing = true;
-            })
-            .unwrap();
+    if let Some(_) = oscillator_index {
+        model.stream.send(|audio| audio.playing = true).unwrap();
     } else {
-        model
-            .stream
-            .send(|audio| {
-                audio.playing = false;
-            })
-            .unwrap();
+        model.stream.send(|audio| audio.playing = false).unwrap();
     }
 
     if let Some(index) = sequencer_index {
@@ -482,22 +446,16 @@ fn update_sound(app: &App, model: &mut Model) {
                 let next_value = seq.next_value();
                 let new_hz = next_value as f64;
 
-                let base_hz = 440.0;
-
                 model
                     .stream
-                    .send(move |audio| {
-                        audio.hz = base_hz * new_hz;
-                    })
+                    .send(move |audio| audio.hz = 440.0 * new_hz)
                     .unwrap();
             }
         }
     } else {
         model
             .stream
-            .send(move |audio| {
-                audio.hz += hz_increment;
-            })
+            .send(move |audio| audio.hz += hz_increment)
             .unwrap();
     }
 
@@ -506,26 +464,22 @@ fn update_sound(app: &App, model: &mut Model) {
             model.chain.get_mut(index).map(|card| &mut card.class)
         {
             let attack = 1.0;
-            let envelope = if model.beat_time < beat_duration * attack {
-                1.0 - ((model.beat_time - beat_duration * (1.0 - attack))
-                    / (beat_duration * attack))
+            let envelope = if model.beat_time < beat_duration as f32 * attack {
+                1.0 - ((model.beat_time - beat_duration as f32 * (1.0 - attack))
+                    / (beat_duration as f32 * attack)) as f32
             } else {
-                model.beat_time / (beat_duration * (1.0 - attack))
+                (model.beat_time / (beat_duration as f32 * (1.0 - attack))) as f32
             };
 
             model
                 .stream
-                .send(move |audio| {
-                    audio.envelope = envelope;
-                })
+                .send(move |audio| audio.envelope = envelope)
                 .unwrap();
         }
     } else {
         model
             .stream
-            .send(move |audio| {
-                audio.envelope = 1.0;
-            })
+            .send(move |audio| audio.envelope = 1.0)
             .unwrap();
     }
 }
